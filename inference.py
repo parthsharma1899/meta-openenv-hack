@@ -3,9 +3,9 @@ Cybersecurity Intrusion Detection Environment — Inference Script
 ================================================================
 Required environment variables (set by hackathon validator):
     IMAGE_NAME    Docker image for the environment container
-    API_BASE_URL  LLM endpoint  (default: HF Router)
-    MODEL_NAME    Model ID      (default: Qwen/Qwen2.5-72B-Instruct)
-    HF_TOKEN      API key
+    API_BASE_URL  LLM endpoint
+    API_KEY       API key for the LLM proxy
+    MODEL_NAME    Model ID
 
 Optional:
     IDS_TASK        easy | medium | hard  (default: easy)
@@ -38,23 +38,22 @@ from client import IDSEnv          # noqa: E402
 from models import IDSAction        # noqa: E402
 
 # ---------------------------------------------------------------------------
-# Config  (variable names match the hackathon sample script exactly)
+# Config — use exactly what the validator injects, crash if missing
 # ---------------------------------------------------------------------------
 IMAGE_NAME   = os.getenv("IMAGE_NAME") or os.getenv("LOCAL_IMAGE_NAME")
-API_KEY      = os.environ.get("API_KEY") or os.environ.get("HF_TOKEN")
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME   = os.environ.get("MODEL_NAME",   "Qwen/Qwen2.5-72B-Instruct")
-
-# Debug: log which credentials the agent will use
-print(f"[DEBUG] API_BASE_URL={API_BASE_URL}", flush=True)
-print(f"[DEBUG] API_KEY={'set' if API_KEY else 'NOT SET'}", flush=True)
-print(f"[DEBUG] MODEL_NAME={MODEL_NAME}", flush=True)
-TASK_NAME    = os.getenv("IDS_TASK",  "easy")
+API_BASE_URL = os.environ["API_BASE_URL"]
+API_KEY      = os.environ["API_KEY"]
+MODEL_NAME   = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+TASK_NAME    = os.getenv("IDS_TASK", "easy")
 BENCHMARK    = "ids_env"
 MAX_STEPS    = 6
 TEMPERATURE  = 0.2
 MAX_TOKENS   = 512
 SUCCESS_SCORE_THRESHOLD = 0.5
+
+print(f"[DEBUG] API_BASE_URL={API_BASE_URL}", flush=True)
+print(f"[DEBUG] API_KEY set={bool(API_KEY)}", flush=True)
+print(f"[DEBUG] MODEL_NAME={MODEL_NAME}", flush=True)
 
 # ---------------------------------------------------------------------------
 # Required stdout logging helpers
@@ -131,7 +130,7 @@ SYSTEM_PROMPTS = {
 }
 
 # ---------------------------------------------------------------------------
-# Action parsing
+# Action parsing — only for LLM response text, NOT for API failures
 # ---------------------------------------------------------------------------
 
 def parse_action(text: str) -> Optional[IDSAction]:
@@ -150,6 +149,7 @@ def parse_action(text: str) -> Optional[IDSAction]:
 
 
 def fallback_action(task: str, step: int) -> IDSAction:
+    """Only used when the LLM responded but output couldn't be parsed."""
     if task == "easy":
         return IDSAction(action_type="scan_traffic", threat_positions=[])
     if task == "medium":
@@ -164,7 +164,7 @@ def fallback_action(task: str, step: int) -> IDSAction:
                      ranking=[1, 2, 0], selected_rule_index=1)
 
 # ---------------------------------------------------------------------------
-# LLM call
+# LLM call — raises on failure, no silent swallowing
 # ---------------------------------------------------------------------------
 
 def get_llm_action(client: OpenAI, system: str, history: List[dict],
@@ -172,17 +172,11 @@ def get_llm_action(client: OpenAI, system: str, history: List[dict],
     messages = [{"role": "system", "content": system}]
     messages.extend(history[-6:])
     messages.append({"role": "user", "content": obs})
-    # Retry up to 3 times to ensure the API call goes through
-    for attempt in range(1, 4):
-        try:
-            resp = client.chat.completions.create(
-                model=MODEL_NAME, messages=messages,
-                temperature=TEMPERATURE, max_tokens=MAX_TOKENS, stream=False,
-            )
-            return (resp.choices[0].message.content or "").strip()
-        except Exception as exc:
-            print(f"[DEBUG] LLM error (attempt {attempt}/3): {exc}", flush=True)
-    return ""
+    resp = client.chat.completions.create(
+        model=MODEL_NAME, messages=messages,
+        temperature=TEMPERATURE, max_tokens=MAX_TOKENS, stream=False,
+    )
+    return (resp.choices[0].message.content or "").strip()
 
 # ---------------------------------------------------------------------------
 # Episode
@@ -200,22 +194,16 @@ async def run_episode(task: str) -> None:
     log_start(task=task, env=BENCHMARK, model=MODEL_NAME)
 
     try:
-        print(f"[DEBUG] Initializing OpenAI client: base_url={API_BASE_URL}", flush=True)
         llm = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
         sys_prompt = SYSTEM_PROMPTS.get(task, SYSTEM_PROMPTS["easy"])
 
         # ── Connect to environment ───────────────────────────────────────
         if IMAGE_NAME:
-            # Hackathon path: validator sets IMAGE_NAME, we start the container
             env = await IDSEnv.from_docker_image(IMAGE_NAME)
         else:
-            # Dev/fallback path: connect to a live Space
-            env_url = os.getenv(
-                "IDS_ENV_URL",
-                "https://parthsharma1899-meta-openenv-hack.hf.space",
-            )
+            env_url = os.environ.get("IDS_ENV_URL", "http://localhost:8000")
             env = IDSEnv(base_url=env_url)
-            await env.connect()   # ← must be called explicitly for URL path
+            await env.connect()
 
         # ── Reset ────────────────────────────────────────────────────────
         result      = await env.reset(task=task)
@@ -227,14 +215,16 @@ async def run_episode(task: str) -> None:
             if done:
                 break
 
+            # LLM call — let it raise if the API fails
             raw      = get_llm_action(llm, sys_prompt, history, obs_message)
             action   = parse_action(raw)
             err_msg  = None
 
             if action is None:
+                # LLM responded but we couldn't parse — use fallback
                 err_msg = f"parse_error:{raw[:40]!r}"
                 action  = fallback_action(task, step)
-                print(f"[DEBUG] fallback at step {step}: {action.action_type}",
+                print(f"[DEBUG] parse fallback at step {step}: {action.action_type}",
                       flush=True)
 
             action_str = json.dumps(action.model_dump(exclude_none=True))
@@ -282,6 +272,5 @@ if __name__ == "__main__":
     try:
         asyncio.run(run_episode(TASK_NAME))
     except Exception as e:
-        # Should never reach here, but ensure clean exit regardless
         print(f"[DEBUG] Top-level exception: {e}", flush=True)
     sys.exit(0)
