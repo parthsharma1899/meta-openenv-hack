@@ -1,49 +1,49 @@
 ---
-title: CRISPR Guide RNA Design Environment
-emoji: 🧬
-colorFrom: blue
-colorTo: green
+title: Cybersecurity Intrusion Detection Environment
+emoji: "🛡"
+colorFrom: red
+colorTo: indigo
 sdk: docker
 pinned: false
 ---
 
-# CRISPR Guide RNA Design Environment
+# Cybersecurity Intrusion Detection Environment
 
-An AI agent benchmark that simulates the workflow of a computational biologist designing CRISPR gene edits — the same process used in real gene therapy research.
+An AI agent benchmark that simulates the workflow of a Security Operations Center (SOC) analyst — detecting threats in network traffic, constructing detection rules, and evaluating false-positive trade-offs.
 
-> CRISPR won the 2020 Nobel Prize in Chemistry. This environment turns that science into a fully deterministic RL training benchmark.
+> Network intrusion detection is a cornerstone of cybersecurity. This environment turns that process into a fully deterministic RL training benchmark.
 
 ---
 
 ## Overview
 
-The agent receives a DNA sequence containing a known pathogenic mutation. It must identify valid cut sites, design a guide RNA, and assess whether the edit is safe — mirroring exactly what biologists do in the lab before a clinical trial.
+The agent receives hex-encoded network traffic containing known threat signatures. It must identify malicious patterns, design detection rules, and assess whether a rule is safe to deploy — mirroring exactly what SOC analysts do when triaging alerts.
 
 Three tasks of increasing difficulty:
 
 | Task | What the agent does | Max Score |
 |------|---------------------|-----------|
-| **Easy** | Find all NGG PAM sites (valid cut anchors) in a 90-bp sequence | 1.0 |
-| **Medium** | Design a 20-nt guide RNA near a mutation + score on-target efficiency | 1.0 |
-| **Hard** | Check off-target binding risk for 3 candidate guides, rank them, pick the safest | 1.0 |
+| **Easy** | Find all XFF threat signatures in a 90-char hex traffic stream | 1.0 |
+| **Medium** | Create a 20-char detection rule near a suspicious anomaly + score accuracy | 1.0 |
+| **Hard** | Check false-positive rates for 3 candidate rules, rank them, pick the safest | 1.0 |
 
-All scoring is **fully deterministic** — PAM sites are rule-based (NGG), efficiency uses Doench Rule Set 2 formulas, off-targets use mismatch counting with seed-region checks. No LLM-as-judge.
+All scoring is **fully deterministic** — signatures are rule-based (XFF pattern), accuracy uses character-property formulas, false positives use sliding-window mismatch counting with core-region checks. No LLM-as-judge.
 
 ---
 
 ## Project Structure
 
 ```
-crispr_env/
+ids_env/
 ├── __init__.py
-├── models.py              # CRISPRAction, CRISPRObservation, CRISPRState (Pydantic)
+├── models.py              # IDSAction, IDSObservation, IDSState (Pydantic)
 ├── client.py              # OpenEnv WebSocket client
 ├── openenv.yaml           # Submission manifest
 ├── pyproject.toml
 ├── requirements.txt
 └── server/
     ├── environment.py     # All task logic + scoring functions
-    ├── app.py             # FastAPI server (one line)
+    ├── app.py             # FastAPI server
     └── Dockerfile
 inference.py               # LLM agent script (OpenAI-compatible)
 ```
@@ -53,32 +53,32 @@ inference.py               # LLM agent script (OpenAI-compatible)
 ## Available Actions
 
 ```
-scan_sequence(pam_positions)      →  submit found NGG PAM sites
-design_guide(position)            →  get 20-nt guide RNA at a PAM position
-score_ontarget(guide)             →  Doench RS2 efficiency score [0–1]
-check_offtarget(guide_index)      →  off-target hit count in genome excerpt
-select_best(ranking, selected)    →  final safety ranking + recommendation
+scan_traffic(threat_positions)              -> submit found XFF signature positions
+create_detection_rule(position)             -> get 20-char detection rule at a signature
+evaluate_detection_accuracy(rule)           -> accuracy score [0-1]
+evaluate_false_positives(rule_index)        -> false-positive count against baseline
+select_optimal_rule(ranking, selected)      -> final safety ranking + recommendation
 ```
 
 ---
 
 ## Reward Structure
 
-### Easy — PAM Scanning
+### Easy — Threat Signature Scanning
 ```
-reward = correct_found / total_true_pams   (recall, max 1.0)
+reward = correct_found / total_true_signatures   (recall, max 1.0)
 ```
 
-### Medium — Guide Design
+### Medium — Detection Rule Design
 ```
-reward = 0.4 (valid guide near mutation) + 0.6 × efficiency_score
+reward = 0.4 (valid rule near anomaly) + 0.6 x accuracy_score
 ```
 
 ### Hard — Safety Assessment
 ```
-reward = 0.3 (all 3 guides checked)
+reward = 0.3 (all 3 rules checked)
        + 0.4 (correct safety ranking)
-       + 0.3 (correct guide selected)
+       + 0.3 (correct rule selected)
 ```
 
 ---
@@ -90,14 +90,14 @@ reward = 0.3 (all 3 guides checked)
 pip install openenv-core fastapi uvicorn pydantic
 
 # Start the environment server
-uvicorn crispr_env.server.app:app --host 0.0.0.0 --port 8000 --reload
+uvicorn ids_env.server.app:app --host 0.0.0.0 --port 8000 --reload
 
 # Run the agent (in a separate terminal)
 export HF_TOKEN=your_huggingface_token
 export API_BASE_URL=https://router.huggingface.co/v1
 export MODEL_NAME=Qwen/Qwen2.5-72B-Instruct
-export CRISPR_TASK=easy          # easy | medium | hard
-export CRISPR_ENV_URL=http://localhost:8000
+export IDS_TASK=easy          # easy | medium | hard
+export IDS_ENV_URL=http://localhost:8000
 
 python inference.py
 ```
@@ -111,9 +111,9 @@ python inference.py
 | `HF_TOKEN` | Yes | Hugging Face API token |
 | `API_BASE_URL` | Yes | LLM endpoint (default: HF Router) |
 | `MODEL_NAME` | Yes | Model identifier |
-| `CRISPR_TASK` | No | Task to run: `easy`, `medium`, `hard` (default: `easy`) |
-| `CRISPR_ENV_URL` | No | Environment server URL (default: `http://localhost:8000`) |
-| `LOCAL_IMAGE_NAME` | No | Docker image name if using `from_docker_image()` |
+| `IDS_TASK` | No | Task to run: `easy`, `medium`, `hard` (default: `easy`) |
+| `IDS_ENV_URL` | No | Environment server URL (default: `http://localhost:8000`) |
+| `IMAGE_NAME` | No | Docker image name (set by hackathon validator) |
 
 ---
 
@@ -121,30 +121,28 @@ python inference.py
 
 ```bash
 # Build
-docker build -t crispr-guide-env -f crispr_env/server/Dockerfile .
+docker build -t ids-env -f ids_env/server/Dockerfile .
 
 # Run
-docker run -p 8000:8000 crispr-guide-env
+docker run -p 8000:8000 ids-env
 ```
 
 ---
 
-## Biology Background
+## Cybersecurity Background
 
 | Term | Meaning |
 |------|---------|
-| **PAM site** | NGG motif where Cas9 anchors before cutting |
-| **Guide RNA (gRNA)** | 20-nt sequence that directs Cas9 to the target |
-| **On-target efficiency** | How reliably the guide cuts at the intended site |
-| **Off-target binding** | Accidental cuts at similar sequences elsewhere in the genome |
-| **Doench Rule Set 2** | Published scoring model for gRNA efficiency (Nature Biotech 2016) |
+| **XFF Signature** | Byte pattern (any hex char followed by FF) indicating malicious traffic |
+| **Detection Rule** | 20-char hex substring used to flag future threats |
+| **Detection Accuracy** | How reliably a rule identifies true threats (scored by character properties) |
+| **False Positives** | Benign traffic incorrectly flagged as threats by a rule |
+| **Baseline Traffic** | Known-clean traffic stream used to test for false positives |
 
 ---
 
 ## References
 
-- Doench et al. (2016) *Optimized sgRNA design to maximize activity and minimize off-target effects of CRISPR-Cas9*. Nature Biotechnology.
-- Hsu et al. (2013) *DNA targeting specificity of RNA-guided Cas9 nucleases*. Nature Biotechnology.
 - [OpenEnv Framework](https://github.com/meta-pytorch/OpenEnv)
 
 ---
