@@ -1,0 +1,18 @@
+name: ids_env
+version: "1.0.0"
+description: >
+  Cybersecurity Intrusion Detection Environment — a three-task benchmark for
+  AI agents that simulate SOC analyst workflows: threat signature scanning,
+  detection rule creation with accuracy scoring, and false-positive safety
+  assessment. All rewards are fully deterministic.
+author: parthsharma1899
+tasks:
+  - name: easy
+    description: "Find all XFF threat signatures in a 90-char hex network traffic stream."
+    max_steps: 1
+  - name: medium
+    description: "Create a 20-char detection rule near a suspicious anomaly and score accuracy."
+    max_steps: 3
+  - name: hard
+    description: "Assess false-positive rates for 3 candidate rules and recommend the safest."
+    max_steps: 5

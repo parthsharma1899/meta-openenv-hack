@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "ids-env"
+version = "1.0.0"
+description = "Cybersecurity Intrusion Detection Environment for OpenEnv hackathon"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Parth Sharma" }]
+dependencies = [
+    "openenv-core>=0.2.2",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.0.0",
+]
