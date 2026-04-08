@@ -51,6 +51,11 @@ TEMPERATURE  = 0.2
 MAX_TOKENS   = 512
 SUCCESS_SCORE_THRESHOLD = 0.5
 
+if not API_BASE_URL.strip():
+    raise ValueError("API_BASE_URL is empty")
+if not API_KEY.strip():
+    raise ValueError("API_KEY is empty")
+
 print(f"[DEBUG] API_BASE_URL={API_BASE_URL}", flush=True)
 print(f"[DEBUG] API_KEY set={bool(API_KEY)}", flush=True)
 print(f"[DEBUG] MODEL_NAME={MODEL_NAME}", flush=True)
@@ -188,6 +193,7 @@ async def run_episode(task: str) -> None:
     steps_taken: int         = 0
     score:       float       = 0.0
     success:     bool        = False
+    llm_calls:   int         = 0
     env                      = None
 
     # [START] must be emitted before any other output
@@ -216,7 +222,9 @@ async def run_episode(task: str) -> None:
                 break
 
             # LLM call — let it raise if the API fails
+            print(f"[DEBUG] about_to_call_llm step={step}", flush=True)
             raw      = get_llm_action(llm, sys_prompt, history, obs_message)
+            llm_calls += 1
             action   = parse_action(raw)
             err_msg  = None
 
@@ -256,6 +264,7 @@ async def run_episode(task: str) -> None:
 
     finally:
         # [END] must ALWAYS be emitted, even on crash
+        print(f"[DEBUG] llm_calls={llm_calls}", flush=True)
         if env is not None:
             try:
                 await env.close()

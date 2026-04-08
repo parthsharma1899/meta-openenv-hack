@@ -93,7 +93,7 @@ pip install openenv-core fastapi uvicorn pydantic
 uvicorn ids_env.server.app:app --host 0.0.0.0 --port 8000 --reload
 
 # Run the agent (in a separate terminal)
-export HF_TOKEN=your_huggingface_token
+export API_KEY=your_proxy_api_key
 export API_BASE_URL=https://router.huggingface.co/v1
 export MODEL_NAME=Qwen/Qwen2.5-72B-Instruct
 export IDS_TASK=easy          # easy | medium | hard
@@ -108,7 +108,7 @@ python inference.py
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `HF_TOKEN` | Yes | Hugging Face API token |
+| `API_KEY` | Yes | API key for the injected LLM proxy |
 | `API_BASE_URL` | Yes | LLM endpoint (default: HF Router) |
 | `MODEL_NAME` | Yes | Model identifier |
 | `IDS_TASK` | No | Task to run: `easy`, `medium`, `hard` (default: `easy`) |
