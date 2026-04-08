@@ -41,9 +41,14 @@ from models import IDSAction        # noqa: E402
 # Config  (variable names match the hackathon sample script exactly)
 # ---------------------------------------------------------------------------
 IMAGE_NAME   = os.getenv("IMAGE_NAME") or os.getenv("LOCAL_IMAGE_NAME")
-API_KEY      = os.getenv("API_KEY")   or os.getenv("HF_TOKEN")
-API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME   = os.getenv("MODEL_NAME",   "Qwen/Qwen2.5-72B-Instruct")
+API_KEY      = os.environ.get("API_KEY") or os.environ.get("HF_TOKEN")
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME   = os.environ.get("MODEL_NAME",   "Qwen/Qwen2.5-72B-Instruct")
+
+# Debug: log which credentials the agent will use
+print(f"[DEBUG] API_BASE_URL={API_BASE_URL}", flush=True)
+print(f"[DEBUG] API_KEY={'set' if API_KEY else 'NOT SET'}", flush=True)
+print(f"[DEBUG] MODEL_NAME={MODEL_NAME}", flush=True)
 TASK_NAME    = os.getenv("IDS_TASK",  "easy")
 BENCHMARK    = "ids_env"
 MAX_STEPS    = 6
@@ -167,15 +172,17 @@ def get_llm_action(client: OpenAI, system: str, history: List[dict],
     messages = [{"role": "system", "content": system}]
     messages.extend(history[-6:])
     messages.append({"role": "user", "content": obs})
-    try:
-        resp = client.chat.completions.create(
-            model=MODEL_NAME, messages=messages,
-            temperature=TEMPERATURE, max_tokens=MAX_TOKENS, stream=False,
-        )
-        return (resp.choices[0].message.content or "").strip()
-    except Exception as exc:
-        print(f"[DEBUG] LLM error: {exc}", flush=True)
-        return ""
+    # Retry up to 3 times to ensure the API call goes through
+    for attempt in range(1, 4):
+        try:
+            resp = client.chat.completions.create(
+                model=MODEL_NAME, messages=messages,
+                temperature=TEMPERATURE, max_tokens=MAX_TOKENS, stream=False,
+            )
+            return (resp.choices[0].message.content or "").strip()
+        except Exception as exc:
+            print(f"[DEBUG] LLM error (attempt {attempt}/3): {exc}", flush=True)
+    return ""
 
 # ---------------------------------------------------------------------------
 # Episode
@@ -193,6 +200,7 @@ async def run_episode(task: str) -> None:
     log_start(task=task, env=BENCHMARK, model=MODEL_NAME)
 
     try:
+        print(f"[DEBUG] Initializing OpenAI client: base_url={API_BASE_URL}", flush=True)
         llm = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
         sys_prompt = SYSTEM_PROMPTS.get(task, SYSTEM_PROMPTS["easy"])
 
