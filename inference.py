@@ -44,12 +44,13 @@ IMAGE_NAME   = os.getenv("IMAGE_NAME") or os.getenv("LOCAL_IMAGE_NAME")
 API_BASE_URL = os.environ["API_BASE_URL"]
 API_KEY      = os.environ["API_KEY"]
 MODEL_NAME   = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-TASK_NAME    = os.getenv("IDS_TASK", "easy")
+TASK_NAME    = os.getenv("IDS_TASK")
 BENCHMARK    = "ids_env"
 MAX_STEPS    = 6
 TEMPERATURE  = 0.2
 MAX_TOKENS   = 512
 SUCCESS_SCORE_THRESHOLD = 0.5
+SCORE_EPSILON = 1e-3
 
 if not API_BASE_URL.strip():
     raise ValueError("API_BASE_URL is empty")
@@ -84,6 +85,15 @@ def log_end(success: bool, steps: int, score: float,
         f"score={score:.3f} rewards={','.join(f'{r:.2f}' for r in rewards)}",
         flush=True,
     )
+
+
+def bound_score_strict(raw_score: float) -> float:
+    """Bound score to strict open interval (0, 1) required by validator."""
+    if raw_score <= 0.0:
+        return SCORE_EPSILON
+    if raw_score >= 1.0:
+        return 1.0 - SCORE_EPSILON
+    return raw_score
 
 # ---------------------------------------------------------------------------
 # System prompts
@@ -303,7 +313,9 @@ async def run_episode(task: str) -> None:
             if done:
                 break
 
-        score   = min(max(sum(rewards), 0.0), 1.0)
+        raw_score = min(max(sum(rewards), 0.0), 1.0)
+        score = bound_score_strict(raw_score)
+        print(f"[DEBUG] raw_score={raw_score:.4f} bounded_score={score:.4f}", flush=True)
         success = score >= SUCCESS_SCORE_THRESHOLD
 
     except Exception as exc:
@@ -329,7 +341,9 @@ async def run_episode(task: str) -> None:
 
 if __name__ == "__main__":
     try:
-        asyncio.run(run_episode(TASK_NAME))
+        tasks = [TASK_NAME] if TASK_NAME else ["easy", "medium", "hard"]
+        for t in tasks:
+            asyncio.run(run_episode(t))
     except Exception as e:
         print(f"[DEBUG] Top-level exception: {e}", flush=True)
     sys.exit(0)
