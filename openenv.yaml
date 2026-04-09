@@ -1,18 +1,63 @@
+spec_version: 1
 name: ids_env
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
+
 version: "1.0.0"
 description: >
   Cybersecurity Intrusion Detection Environment — a three-task benchmark for
   AI agents that simulate SOC analyst workflows: threat signature scanning,
   detection rule creation with accuracy scoring, and false-positive safety
   assessment. All rewards are fully deterministic.
+
 author: parthsharma1899
+tags:
+  - openenv
+  - cybersecurity
+  - intrusion-detection
+  - network-security
+
 tasks:
-  - name: easy
+  - id: easy
     description: "Find all XFF threat signatures in a 90-char hex network traffic stream."
+    difficulty: easy
     max_steps: 1
-  - name: medium
+    scoring: "0.0-1.0 partial credit based on recall minus false-positive penalty"
+
+  - id: medium
     description: "Create a 20-char detection rule near a suspicious anomaly and score accuracy."
+    difficulty: medium
     max_steps: 3
-  - name: hard
+    scoring: "0.4 (valid position) + 0.6 x accuracy_score"
+
+  - id: hard
     description: "Assess false-positive rates for 3 candidate rules and recommend the safest."
+    difficulty: hard
     max_steps: 5
+    scoring: "0.3 (all checked) + 0.4 (correct ranking) + 0.3 (correct pick)"
+
+reward:
+  type: continuous
+  range: [0.0, 1.0]
+
+endpoints:
+  - path: /reset
+    method: POST
+    description: Start a new episode
+  - path: /step
+    method: POST
+    description: Submit an action
+  - path: /state
+    method: GET
+    description: Get current episode metadata
+  - path: /tasks
+    method: GET
+    description: List all tasks
+  - path: /grader
+    method: POST
+    description: Grade an action without a full episode
+  - path: /health
+    method: GET
+    description: Health check
